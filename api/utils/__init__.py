@@ -207,34 +207,50 @@ def serialize_b64(src, to_str=False):
 
 
 def deserialize_b64(src):
+    """Decodes Base64 and deserializes using the restricted loader."""
     src = base64.b64decode(
         string_to_bytes(src) if isinstance(
-            src, str) else src)
-    if use_deserialize_safe_module:
-        return restricted_loads(src)
-    return pickle.loads(src)
+            src, str) else src) 
+    # Always use the restricted loader now
+    return restricted_loads(src) 
+    # The original 'if/else' block and the direct call to pickle.loads are removed.
 
-
-safe_module = {
-    'numpy',
-    'rag_flow'
+# Define a more granular allow list (EXAMPLE ONLY - needs refinement based on actual usage)
+# We are REMOVING 'numpy' for now as it's known dangerous in this context.
+# We allow specific basic types often used in serialization.
+SAFE_GLOBALS = {
+    'builtins': {'set', 'list', 'dict', 'tuple', 'bytes', 'str', 'int', 'float', 'bool', 'None'},
+    'copy_reg': {'_reconstructor'}, # Needed for pickling some objects
+    'datetime': {'datetime', 'date', 'timedelta'},
+    # Add other specific 'module.Class' pairs ONLY if absolutely necessary and known safe.
+    # Example: 'decimal.Decimal' IF you know Decimal objects are pickled.
+    # AVOID allowing entire modules like 'numpy' or even 'rag_flow' unless unavoidable
+    # and you've audited them heavily.
+    # 'rag_flow.some.safe.Class' : {'SafeClass'} # Example if needed
 }
-
 
 class RestrictedUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
-        import importlib
-        if module.split('.')[0] in safe_module:
-            _module = importlib.import_module(module)
-            return getattr(_module, name)
-        # Forbid everything else.
-        raise pickle.UnpicklingError("global '%s.%s' is forbidden" %
-                                     (module, name))
+        # Check if the module is explicitly allowed
+        if module in SAFE_GLOBALS:
+            # Check if the name within that module is allowed
+            if name in SAFE_GLOBALS[module]:
+                # Import the module and get the attribute
+                try:
+                    m = importlib.import_module(module)
+                    return getattr(m, name)
+                except (ImportError, AttributeError, KeyError):
+                    # Handle cases where module/attribute doesn't exist or isn't in SAFE_GLOBALS correctly
+                    pass # Fall through to raise error
+        
+        # If module or name is not in the allow list, forbid it.
+        raise pickle.UnpicklingError("global '%s.%s' is forbidden" % (module, name))
 
-
+# Note: The original 'safe_module' set is now replaced by SAFE_GLOBALS dictionary.
+# The restricted_loads function remains the same:
 def restricted_loads(src):
-    """Helper function analogous to pickle.loads()."""
-    return RestrictedUnpickler(io.BytesIO(src)).load()
+    """Helper function analogous to pickle.loads() using RestrictedUnpickler."""
+    return RestrictedUnpickler(io.BytesIO(src)).load() 
 
 
 def get_lan_ip():
