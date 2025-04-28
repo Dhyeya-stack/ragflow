@@ -90,15 +90,17 @@ def login():
             message=f"Email: {email} is not registered!",
         )
 
-    password = request.json.get("password")
-    try:
-        password = decrypt(password)
-    except BaseException:
-        return get_json_result(
-            data=False, code=settings.RetCode.SERVER_ERROR, message="Fail to crypt password"
-        )
+    password = request.json.get("password") # Gets password from request
 
-    user = UserService.query_user(email, password)
+    # We simply removed the try...except block and the password = decrypt(password) line.
+    # Add a basic check in case the password wasn't sent in the request
+    if not password:
+         return get_json_result(
+             data=False, code=settings.RetCode.ARGUMENT_ERROR, message="Password is required."
+         )
+
+    # Now, this line uses the original password sent by the user
+    user = UserService.query_user(email, password) 
     if user:
         response_data = user.to_json()
         user.access_token = get_uuid()
@@ -483,7 +485,7 @@ def setting_user():
     if request_data.get("password"):
         new_password = request_data.get("new_password")
         if not check_password_hash(
-                current_user.password, decrypt(request_data["password"])
+                current_user.password, request_data["password"] # <<< Fixed (removed decrypt)
         ):
             return get_json_result(
                 data=False,
@@ -492,7 +494,7 @@ def setting_user():
             )
 
         if new_password:
-            update_dict["password"] = generate_password_hash(decrypt(new_password))
+            update_dict["password"] = generate_password_hash(new_password)
 
     for k in request_data.keys():
         if k in [
@@ -686,7 +688,7 @@ def user_add():
         "access_token": get_uuid(),
         "email": email_address,
         "nickname": nickname,
-        "password": decrypt(req["password"]),
+        "password": (req["password"]),# <<< Fixed (remove decrypt)
         "login_channel": "password",
         "last_login_time": get_format_time(),
         "is_superuser": False,
